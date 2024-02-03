@@ -16,7 +16,11 @@ class Crawler:
         self.frontier = frontier
         self.corpus = corpus
         self.subdomains = {}
+<<<<<<< HEAD
         self.max_out_links = (None, -1)
+=======
+        self.max_out_links = ('None', -1)
+>>>>>>> eb4515fb577019642cadc644a2e0d63a885e8c69
 
     def start_crawling(self):
         """
@@ -44,11 +48,20 @@ class Crawler:
 
         Suggested library: lxml
         """
+<<<<<<< HEAD
         content = url_data['content']
         decoded_content = self.get_decoded_content(content)
 
         output_links = []
         if decoded_content and 'html' in decoded_content:
+=======
+        from urllib.parse import urljoin, urlparse
+        from lxml import html
+
+        output_links = []
+
+        if self.is_valid_content(url_data['content']):
+>>>>>>> eb4515fb577019642cadc644a2e0d63a885e8c69
             tree = html.fromstring(url_data['content'])
             links = tree.xpath('//a/@href')
 
