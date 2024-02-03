@@ -1,6 +1,8 @@
 import logging
 import re
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
+from lxml import html
+import chardet
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +15,8 @@ class Crawler:
     def __init__(self, frontier, corpus):
         self.frontier = frontier
         self.corpus = corpus
+        self.subdomains = {}
+        self.max_out_links = (None, -1)
 
     def start_crawling(self):
         """
@@ -40,12 +44,11 @@ class Crawler:
 
         Suggested library: lxml
         """
-        from urllib.parse import urljoin
-        from lxml import html
+        content = url_data['content']
+        decoded_content = self.get_decoded_content(content)
 
         output_links = []
-        
-        if self.is_valid_content(url_data['content']):
+        if decoded_content and 'html' in decoded_content:
             tree = html.fromstring(url_data['content'])
             links = tree.xpath('//a/@href')
 
@@ -56,15 +59,37 @@ class Crawler:
                 except ValueError:     # Link does not appear to be an IPv4 or IPv6 address
                     print("Invalid link: ", link)
 
+            # update subdomains visited and num urls processed from subdomain
+            domain = urlparse(url_data['url']).netloc
+            if domain not in self.subdomains:
+                self.subdomains[domain] = 1
+            else:
+                self.subdomains[domain] += 1
+
+            # keep track of page with most valid outlinks
+            if len(output_links) > self.max_out_links[1]:
+                self.max_out_links = (url_data['url'], len(output_links))
+
         return output_links
+    
 
+    def get_decoded_content(self, content):
+        if not content:
+            return None
+        if isinstance(content, str):
+            return content
+        
+        encoding = self.detect_encoding(content)
+        if not encoding:
+            return None
+        
+        decoded_content = content.decode(encoding)
+        return decoded_content
+    
 
-    def is_valid_content(content):
-        if isinstance(content, bytes):
-            return b'html' in content
-        elif isinstance(content, str):
-            return 'html' in content
-        return False
+    def detect_encoding(self, content):
+        res = chardet.detect(content)
+        return res['encoding']
 
 
     def is_valid(self, url):
