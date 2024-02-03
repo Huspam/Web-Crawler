@@ -13,6 +13,8 @@ class Crawler:
     def __init__(self, frontier, corpus):
         self.frontier = frontier
         self.corpus = corpus
+        self.subdomains = {}
+        self.max_out_links = ('None', -1)
 
     def start_crawling(self):
         """
@@ -40,11 +42,11 @@ class Crawler:
 
         Suggested library: lxml
         """
-        from urllib.parse import urljoin
+        from urllib.parse import urljoin, urlparse
         from lxml import html
 
         output_links = []
-        
+
         if self.is_valid_content(url_data['content']):
             tree = html.fromstring(url_data['content'])
             links = tree.xpath('//a/@href')
@@ -55,6 +57,17 @@ class Crawler:
                     output_links.append(urljoin(base_url, link))
                 except ValueError:     # Link does not appear to be an IPv4 or IPv6 address
                     print("Invalid link: ", link)
+
+            # update subdomains visited and num urls processed from subdomain
+            domain = urlparse(url_data['url']).netloc
+            if domain not in self.subdomains:
+                self.subdomains[domain] = 1
+            else:
+                self.subdomains[domain] += 1
+
+            # keep track of page with most valid outlinks
+            if len(output_links) > self.max_out_links[1]:
+                self.max_out_links = (url_data['url'], len(output_links))
 
         return output_links
 
