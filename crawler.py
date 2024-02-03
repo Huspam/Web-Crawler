@@ -18,6 +18,8 @@ class Crawler:
         self.max_out_links = (None, -1)
         self.longest_page = (None, -1)
         self.freq_words = {}
+        self.traps = []
+        self.downloaded = []
         with open('stopwords.txt') as f:
             self.stopwords = set(f.read().split('\n'))
 
@@ -27,7 +29,7 @@ class Crawler:
         This method starts the crawling process which is scraping urls from the next available link in frontier and adding
         the scraped links to the frontier
         """
-        i = 0
+        # i = 0
         while self.frontier.has_next_url():
             url = self.frontier.get_next_url()
             logger.info("Fetching URL %s ... Fetched: %s, Queue size: %s", url, self.frontier.fetched, len(self.frontier))
@@ -37,16 +39,20 @@ class Crawler:
                 if self.is_valid(next_link):
                     if self.corpus.get_file_name(next_link) is not None:
                         self.frontier.add_url(next_link)
-                    i +=1
+                    # i +=1
             
-            if i > 1000000:
-                break
+            # if i > 10000:
+                # break
 
-        with open('analytics.txt', 'w') as analytics_file:
-            analytics_file.write(str(self.subdomains) + '\n')
-            analytics_file.write(str(self.max_out_links) + '\n')
-            analytics_file.write(str(self.longest_page) + '\n')
-            analytics_file.write(str(sorted(self.freq_words.items(), key=lambda x: (x[1], x[0]), reverse=True)[:50]))
+        with open('analytics.txt', 'w', encoding='utf-8') as analytics_file:
+            analytics_file.write("subdomains accessed: " + str(self.subdomains) + '\n\n')
+            analytics_file.write("page with most out links: " + str(self.max_out_links) + '\n\n')
+            analytics_file.write("longest page: " + str(self.longest_page) + '\n\n')
+            analytics_file.write("50 most common non-stopword words: " + str(sorted(self.freq_words.items(), key=lambda x: (x[1], x[0]), reverse=True)[:50]) + '\n\n')
+            analytics_file.write("trap urls: " + str(self.traps) + '\n\n')
+            analytics_file.write("downloaded urls: " + str(self.downloaded) + '\n\n')
+            # print(len(self.traps))
+            # print(len(self.downloaded))
     
 
     def extract_next_links(self, url_data):
@@ -62,15 +68,16 @@ class Crawler:
         url = url_data['url']
         final_url = url_data['final_url']
         content = url_data['content']
+        encoded_content = self._encode_content(content)
 
         tree = None
         try:
-            tree = html.fromstring(content)
+            tree = html.fromstring(encoded_content)
         except UnicodeDecodeError:
-            print("Invalid content format: ", url)
+            # print("Invalid content format: ", url)
             return []
         except etree.ParserError:
-            print("Empty content: ", url)
+            # print("Empty content: ", url)
             return []
         
         output_links = []
@@ -93,6 +100,9 @@ class Crawler:
         # keep track of page with most valid outlinks
         if len(output_links) > self.max_out_links[1]:
             self.max_out_links = (url, len(output_links))
+
+        # add downloaded urls
+        self.downloaded.extend(output_links)
 
         # keep track of longest page in terms of word count
         words = self._tokenize(tree.text_content())
@@ -129,6 +139,12 @@ class Crawler:
                     self.freq_words[token] += 1
                 else:
                     self.freq_words[token] = 1
+
+
+    def _encode_content(self, content):
+        if isinstance(content, bytes):
+            return content
+        return content.encode('utf-8', errors='replace')
     
 
     # def _get_decoded_content(self, content):
@@ -165,9 +181,45 @@ class Crawler:
                                     + "|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf" \
                                     + "|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso|epub|dll|cnf|tgz|sha1" \
                                     + "|thmx|mso|arff|rtf|jar|csv" \
-                                    + "|rm|smil|wmv|swf|wma|zip|rar|gz|pdf)$", parsed.path.lower())
+                                    + "|rm|smil|wmv|swf|wma|zip|rar|gz|pdf)$", parsed.path.lower()) \
+                   and not self.is_trap(url, parsed)
 
         except TypeError:
-            print("TypeError for ", parsed)
+            # print("TypeError for ", parsed)
             return False
+        
 
+    def is_trap(self, url, parsed):
+        if self.is_repeat(parsed) or self.depth_long(parsed) or self.length_long(parsed) or self.contains_fragment(parsed):
+            self.traps.append(url)
+            return True
+        return False
+    
+    
+    def is_repeat(self, parsed):
+        scheme = parsed.scheme
+        netloc = parsed.netloc
+        path = parsed.path
+        parts = path.split('/')[1:]
+        if len(parts) >= 3 and parts[-2] in parts[:-2]:
+            index = parts[:-2].index(parts[-2])
+            concat_url = scheme + "://" + netloc + "/" + '/'.join(parts[:index]) + '/'.join(parts[-2:])
+            if concat_url in self.frontier.urls_set:
+                return True
+        return False
+    
+
+    def depth_long(self, parsed):
+        path = parsed.path
+        parts = path.split('/')[1:]
+        return (len(parts) > 5)
+    
+
+    def length_long(self, parsed):
+        length = len(parsed.path + parsed.params + parsed.query + parsed.fragment)
+        return (length > 60)
+    
+
+    def contains_fragment(self, parsed):
+        fragment = parsed.fragment
+        return fragment
